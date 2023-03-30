@@ -53,11 +53,13 @@ def cli(ctx, debug, phaistos_api):
 
 @cli.command()
 @click.argument('report_04_01_path', type=click.File('r', encoding='cp1253'))
-@click.option('--employee_am', default=None, type=int, help='AM of employee')
+@click.option('--employee_am', default=None, type=str, help='AM of employee')
+@click.option('--employee_afm', default=None, type=str, help='AFM of employee')
+@click.option('--employee_type', default=None, type=click.Choice(['Μόνιμος', 'Αναπληρωτής', 'Αναπληρωτής ΠΔΕ']), help='employee type')
 @click.option('--skip_until_am', default=None, type=int, help='skip until employee AM')
 @click.option('--continue_after_am', default=None, type=int, help='continue after employee AM')
 @click.pass_context
-def import_employee_report_04_01(ctx, report_04_01_path, employee_am, skip_until_am, continue_after_am):
+def import_employee_report_04_01(ctx, report_04_01_path, employee_am, employee_afm, employee_type, skip_until_am, continue_after_am):
     """Import myschool employee report 01 from REPORT_04_01_PATH
     
     """
@@ -75,10 +77,14 @@ def import_employee_report_04_01(ctx, report_04_01_path, employee_am, skip_until
 
             _employee_am = row[0]
             
-            if employee_am is not None and str(employee_am) != _employee_am:
+            if employee_am is not None and employee_am != _employee_am:
                 continue
             
-            _employee_afm = row[1]
+            _employee_afm = filter_cvs_column(row[1])
+            
+            if employee_afm is not None and employee_afm != _employee_afm:
+                continue
+            
             _employee_sex = row[2]
             _employee_last_name = row[3]
             _employee_first_name = row[4]
@@ -90,6 +96,10 @@ def import_employee_report_04_01(ctx, report_04_01_path, employee_am, skip_until
             _employee_email = row[12]
             _employee_email_psd = row[13]
             _employee_type_name = row[47]
+
+            if employee_type is not None and employee_type != _employee_type_name:
+                continue
+
             _employee_current_unit_id = row[35]
             _employee_current_unit_name = row[36]
             _employee_specialization_id = row[14]
@@ -103,7 +113,6 @@ def import_employee_report_04_01(ctx, report_04_01_path, employee_am, skip_until
     
 
             # normalization
-            _employee_afm = filter_cvs_column(_employee_afm)
             _employee_current_unit_id = filter_cvs_column(_employee_current_unit_id)
 
             employee_dict = {
