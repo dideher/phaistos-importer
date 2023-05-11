@@ -6,9 +6,12 @@ import time
 import urllib.parse
 import traceback
 import csv
+import xlrd
 from datetime import datetime
 from urllib.parse import urlparse, urljoin, parse_qs
 
+def datetime_to_date_str(value: datetime) -> str:
+    return value.strftime('%d/%m/%Y')
 
 def filter_cvs_column(value: str) -> str:
     """
@@ -292,6 +295,152 @@ def import_employee_report_01_07(ctx, report_01_07_path, employee_am, employee_a
                     raise click.Abort()
                 else:
                     click.echo(f"[W] failed inserting/updating employee '{employee_label}'")
+                    click.echo(f"[W] Response : HTTP/{r.status_code}")
+                    click.echo()
+                    click.echo(json.dumps(r.json(), sort_keys=True, ensure_ascii=False, indent=2))
+                    raise click.Abort()
+                
+                
+                #return True
+
+            except Exception as e:
+                raise click.ClickException(e)
+            
+
+
+@cli.command()
+@click.argument('employments_report_path', type=click.Path(exists=True))
+@click.option('--employee_am', default=None, type=str, help='AM of employee')
+@click.option('--employee_afm', default=None, type=str, help='AFM of employee')
+@click.option('--skip_until_am', default=None, type=int, help='skip until employee AM')
+@click.option('--continue_after_am', default=None, type=int, help='continue after employee AM')
+@click.pass_context
+def import_employments_report(ctx, employments_report_path, employee_am, employee_afm, skip_until_am, continue_after_am):
+    """Import myschool employee report 01 from REPORT_07_01_PATH
+
+    
+    """
+    started_on = datetime.now().replace(microsecond=0)
+    debug = ctx.obj.get('debug', False)
+    phaistos_api = ctx.obj['phaistos_api']
+    employment_resource = phaistos_api + "/api/bulk_import/myschool/employments/"
+    
+    book = xlrd.open_workbook(employments_report_path, encoding_override='cp1253')
+    sh = book.sheet_by_index(0)
+    
+    with requests.Session() as s:
+        
+        for rx in range(2, sh.nrows):
+            
+            row = sh.row(rx)
+            
+            _employee_am = row[0].value
+            
+            if employee_am is not None and employee_am != _employee_am:
+                continue
+            
+            _employee_afm = row[1].value
+            
+            if employee_afm is not None and employee_afm != _employee_afm:
+                continue
+            
+            _employee_last_name = row[2].value
+            _employee_first_name = row[3].value
+            _employee_specialization_id = row[4].value
+            _employee_type = row[5].value
+            _employee_employment_type = row[6].value
+            _employee_employment_unit_id = row[7].value
+            _employee_employment_unit_name = row[8].value
+
+            # compute / parse working days
+            working_days = ''
+            for col in [row[9], row[10], row[11], row[12], row[13]]:
+                try:
+                    working_days += f'{int(col.value)}:'
+                except:
+                    working_days += ''
+            
+            if working_days.endswith(':'):
+                working_days = working_days[:-1]
+
+            try:
+                _employee_employment_hours = int(row[14].value)
+            except:
+                _employee_employment_hours = 0
+            
+            _employee_employment_from = row[15].value
+            _employee_employment_from = datetime(*xlrd.xldate_as_tuple(_employee_employment_from, book.datemode))
+            
+            _employee_employment_until = row[16].value
+            _employee_employment_until = datetime(*xlrd.xldate_as_tuple(_employee_employment_until, book.datemode))
+
+            _employee_employment_status = row[17].value
+
+            # _employee_email = row[12]
+            # _employee_email_psd = row[13]
+            # _employee_type_name = f'Διοικητικός {row[47]}'
+
+            # if _employee_type_name == 'Διοικητικός Μόνιμος':
+            #     _employee_type_name = 'Διοικητικός'
+
+            # _employee_current_unit_id = row[35]
+            # _employee_current_unit_name = row[36]
+            # _employee_specialization_id = row[14]
+            # _employee_specialization_name = row[15]
+            # _employee_mandatory_week_workhours = row[25]
+            # _employee_mk = row[19]
+            # _employee_bathmos = row[18]
+            # _employee_first_workday_date = row[32]
+            # _employee_fek_diorismou = row[20]
+            # _employee_fek_diorismou_date = row[21]
+    
+
+            
+            employee_dict = {
+                'employee_am': _employee_am,
+                'employee_afm': _employee_afm,
+                'employee_last_name': _employee_last_name,
+                'employee_first_name': _employee_first_name,
+                'employee_employment_unit_id': _employee_employment_unit_id,
+                'employee_employment_unit_name': _employee_employment_unit_name,
+                'employee_specialization_id': _employee_specialization_id,
+                'employee_type': _employee_type,
+                'employee_employment_type': _employee_employment_type,
+                'employee_employment_days': working_days,
+                'employee_employment_hours': _employee_employment_hours,
+                'employee_employment_from': datetime_to_date_str(_employee_employment_from),
+                'employee_employment_until': datetime_to_date_str(_employee_employment_until),
+                'employee_employment_status': _employee_employment_status,
+            }
+
+            print(employee_dict)
+            employment_label = f"({employee_dict.get('employee_am')}) {employee_dict.get('employee_last_name')} {employee_dict.get('employee_first_name')} {employee_dict.get('employee_father_name')} [{employee_dict.get('employee_type_name')}]"
+
+
+            if debug:
+                click.echo(f"[I] request object is {json.dumps(employee_dict, ensure_ascii=False, sort_keys=True, indent=2)}")
+            
+            
+            
+        
+            try:
+                r = s.post(employment_resource, json=employee_dict)
+                
+                if r.status_code == 201:
+                    # employee was created
+                    click.echo(f"[I] successfully added employment '{employment_label}' with ID {r.json().get('id')}")
+                    #click.echo(json.dumps(r.json(), sort_keys=True, indent=2))
+                    
+                elif r.status_code == 200:
+                    # employee was updated
+                    click.echo(f"[I] successfully UPDATED employment '{employment_label}' with ID {r.json().get('id')}")
+                    #click.echo(json.dumps(r.json(), sort_keys=True, indent=2))
+                elif r.status_code == 404:
+                    # employee could not matched with phaistos
+                    click.echo(f"[W] could not found employment {employment_label} in phaistos")
+                    raise click.Abort()
+                else:
+                    click.echo(f"[W] failed inserting/updating employment '{employment_label}'")
                     click.echo(f"[W] Response : HTTP/{r.status_code}")
                     click.echo()
                     click.echo(json.dumps(r.json(), sort_keys=True, ensure_ascii=False, indent=2))
