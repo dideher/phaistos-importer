@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='myschool_importer',
+    name='phaistos_importer',
     version='1.0.0',
     packages=find_packages(),
     include_package_data=True,
@@ -12,7 +12,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'myschool_importer = myschool_importer:cli',
+            'phaistos_importer = phaistos_importer:cli',
         ],
     },
     license='',
