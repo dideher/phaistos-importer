@@ -2,9 +2,7 @@ import click
 import requests
 import json
 import re
-import time
-import urllib.parse
-import traceback
+import openpyxl
 import csv
 import xlrd
 from datetime import datetime
@@ -425,6 +423,135 @@ def import_employments_report(ctx, employments_report_path, employee_am, employe
         
             try:
                 r = s.post(employment_resource, json=employee_dict)
+                
+                if r.status_code == 201:
+                    # employee was created
+                    click.echo(f"[I] successfully added employment '{employment_label}' with ID {r.json().get('id')}")
+                    #click.echo(json.dumps(r.json(), sort_keys=True, indent=2))
+                    
+                elif r.status_code == 200:
+                    # employee was updated
+                    click.echo(f"[I] successfully UPDATED employment '{employment_label}' with ID {r.json().get('id')}")
+                    #click.echo(json.dumps(r.json(), sort_keys=True, indent=2))
+                elif r.status_code == 404:
+                    # employee could not matched with phaistos
+                    click.echo(f"[W] could not found employment {employment_label} in phaistos")
+                    raise click.Abort()
+                else:
+                    click.echo(f"[W] failed inserting/updating employment '{employment_label}'")
+                    click.echo(f"[W] Response : HTTP/{r.status_code}")
+                    click.echo()
+                    click.echo(json.dumps(r.json(), sort_keys=True, ensure_ascii=False, indent=2))
+                    raise click.Abort()
+                
+                
+                #return True
+
+            except Exception as e:
+                raise click.ClickException(e)
+            
+
+@cli.command()
+@click.argument('report_path', type=click.Path(exists=True))
+@click.option('--employee_afm', default=None, type=str, help='AFM of employee')
+@click.option('--skip_until_afm', default=None, type=int, help='skip until employee AFM')
+@click.option('--continue_after_afm', default=None, type=int, help='continue after employee AFM')
+@click.option('--dide', default='ΔΙΕΥΘΥΝΣΗ Δ.Ε. ΗΡΑΚΛΕΙΟΥ', help='Τοποθέτηση Δ/ΝΣΗ ΕΚΠ/ΣΗΣ')
+@click.option('--phase', help='Φάση Προσλήψεων', required=True)
+@click.pass_context
+def import_deputy_hiring_report(ctx, report_path, employee_afm, dide, phase, skip_until_afm, continue_after_afm):
+    """
+    Import Deputy hiring announcement
+    
+    """
+    started_on = datetime.now().replace(microsecond=0)
+    debug = ctx.obj.get('debug', False)
+    phaistos_api = ctx.obj['phaistos_api']
+    api_resource = phaistos_api + "/api/bulk_import/substitute_employment_announcement/"
+    
+    book = openpyxl.load_workbook(report_path)
+    sh = book.worksheets[0]
+    
+    with requests.Session() as s:
+        for row in sh.iter_rows(min_row=2, max_row=sh.max_row):
+        
+            
+            #row = sh.row(rx)
+            _xrimatodotisi = row[0].value
+            _aa = row[1].value
+            _aa_rois = row[2].value
+            _source = row[3].value
+            _employee_afm = row[4].value
+
+            _employee_last_name = row[5].value
+            _employee_first_name = row[6].value
+            _employee_father_name = row[7].value
+            _employee_mother_name = row[8].value
+            _employee_klados_id = row[9].value
+            _employee_specialization_id = row[10].value
+            _pinakas = row[11].value
+            _seira_pinaka = row[12].value
+            _moria_pinaka = row[13].value
+            _perioxh_topothetisis = row[14].value
+            _orario = row[15].value
+            _dide = row[16].value
+            _periferia = row[17].value
+            _employee_address_city = row[18].value
+            _employee_address_line = row[19].value
+            _employee_address_postal_code = row[20].value
+            _employee_telephone = row[21].value
+            _employee_mobile = row[22].value
+            _employee_email = row[23].value
+            _employee_birthday = row[24].value
+            _employee_adt = row[25].value
+            _proslipsi = row[26].value
+
+
+            
+            if employee_afm is not None and employee_afm != _employee_afm:
+                continue
+
+            if dide != _dide:
+                continue
+            
+            request_dict = {
+                'phase': phase,
+                'employee_afm': _employee_afm,
+                'employee_last_name': _employee_last_name,
+                'employee_first_name': _employee_first_name,
+                'employee_father_name':_employee_father_name,
+                'employee_mother_name': _employee_mother_name,
+                'employee_klados_id' :_employee_klados_id,
+                'employee_specialization_id': _employee_specialization_id,
+                'financing_source_code': _xrimatodotisi,
+                'employment_source_code': _source,
+                'employment_table': _pinakas,
+                'employment_table_position': _seira_pinaka,
+                'employment_table_score': _moria_pinaka,
+                'employment_workhour_type': _orario, 
+                'employee_address_city': _employee_address_city,
+                'employee_address_line': _employee_address_line,
+                'employee_address_postal_code': _employee_address_postal_code,
+                'employee_telephone': _employee_telephone,
+                'employee_mobile': _employee_mobile,
+                'employee_email': _employee_email,
+                'employee_birthday': datetime_to_date_str(_employee_birthday),
+                'employee_adt': _employee_adt,
+                
+            }
+
+            
+            employment_label = f"({request_dict.get('employee_am')}) {request_dict.get('employee_last_name')} {request_dict.get('employee_first_name')} {request_dict.get('employee_father_name')} [{request_dict.get('employee_type_name')}]"
+
+
+            if debug:
+                click.echo(f"[I] request object is {json.dumps(request_dict, ensure_ascii=False, sort_keys=True, indent=2)}")
+            
+            
+            
+    
+            try:
+                r = s.post(api_resource, json=request_dict)
                 
                 if r.status_code == 201:
                     # employee was created

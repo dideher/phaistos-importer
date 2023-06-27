@@ -8,7 +8,8 @@ setup(
     install_requires=[
         'Click',
         'requests',
-        'xlrd'
+        'xlrd',
+        'openpyxl'
     ],
     entry_points={
         'console_scripts': [
