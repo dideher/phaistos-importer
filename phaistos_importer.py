@@ -11,6 +11,15 @@ from urllib.parse import urlparse, urljoin, parse_qs
 def datetime_to_date_str(value: datetime) -> str:
     return value.strftime('%d/%m/%Y')
 
+def str_to_bool(value: str) -> bool:
+    if value is not None:
+        if value in ['1', 'yes', 'NAI', 'Ναι', 'true', 'True']:
+            return True
+        else:
+            return False
+    else:
+        return False
+
 def filter_cvs_column(value: str) -> str:
     """
     Filters out value like '=""123""'
@@ -571,6 +580,123 @@ def import_deputy_hiring_report(ctx, report_path, employee_afm, dide, phase, ski
                     click.echo(f"[W] Response : HTTP/{r.status_code}")
                     click.echo()
                     click.echo(json.dumps(r.json(), sort_keys=True, ensure_ascii=False, indent=2))
+                    raise click.Abort()
+                
+                
+                #return True
+
+            except Exception as e:
+                raise click.ClickException(e)
+            
+
+@cli.command()
+@click.argument('report_path', type=click.Path(exists=True))
+@click.option('--employee_afm', default=None, type=str, help='AFM of employee')
+@click.option('--skip_until_afm', default=None, type=int, help='skip until employee AFM')
+@click.option('--continue_after_afm', default=None, type=int, help='continue after employee AFM')
+@click.option('--phase', help='Φάση Προσλήψεων', required=True)
+@click.pass_context
+def import_deputy_placement_report(ctx, report_path, employee_afm, phase, skip_until_afm, continue_after_afm):
+    """
+    Import Deputy placement announcement (Απόφαση Τοποθέτησης Αναπληρωτών)
+    
+    """
+
+    # phaistos_importer --debug import-deputy-placement-report "ΓΕΝΙΚΗΣ ΠΔΕ ΠΕΡΙΣΥΝΟ.xlsx" --phase="Lala"
+
+    started_on = datetime.now().replace(microsecond=0)
+    debug = ctx.obj.get('debug', False)
+    phaistos_api = ctx.obj['phaistos_api']
+    api_resource = phaistos_api + "/api/bulk_import/substitute_employment_placement/"
+    
+    book = openpyxl.load_workbook(report_path)
+    sh = book.worksheets[0]
+
+    
+    # determine indexes
+    header_row = sh[1]
+    for cell in header_row:
+        cell_value = cell.value
+        col_idx = cell.col_idx - 1
+        if cell_value in ['ΑΦΜ', 'Α.Φ.Μ.']:
+            _employee_afm_idx = col_idx
+        elif cell_value in ['ΗΜ. ΠΡΟΣΛΗΨΗΣ']:
+            _employment_start_date_idx= col_idx
+        elif cell_value in ['ΕΠΙΘΕΤΟ']:
+            _employee_last_name_idx = col_idx
+        elif cell_value in ['ΟΝΟΜΑ']:
+            _employee_first_name_idx = col_idx
+        elif cell_value in ['ΕΙΔΙΚΟΤΗΤΑ']:
+            _employement_specialization_idx = col_idx
+        elif cell_value in ['ΩΡΑΡΙΟ']:
+            _employment_hour_type_idx = col_idx
+        elif cell_value in ['ΚΩΔ. ΣΧΟΛΕΙΟΥ']:
+            _employement_school_code_idx = col_idx
+        elif cell_value in ['ΣΧ. ΑΝΑΛΗΨΗΣ']:
+            _employement_is_main_school_idx = col_idx
+        elif cell_value in ['ΩΡΕΣ']:
+            _employment_work_hours_idx = col_idx
+        elif cell_value in ['ΤΥΠΟΣ ΚΕΝΟΥ']:
+            _employment_source_code_idx = col_idx
+    
+    with requests.Session() as s:
+        for row in sh.iter_rows(min_row=2, max_row=sh.max_row):
+            
+            #row = sh.row(rx)
+            _employment_start_date = datetime_to_date_str(row[_employment_start_date_idx].value)
+            _employee_afm = row[_employee_afm_idx].value
+            _employee_last_name = row[_employee_last_name_idx].value
+            _employee_first_name = row[_employee_first_name_idx].value
+            _employement_specialization = row[_employement_specialization_idx].value
+            _employment_hour_type = row[_employment_hour_type_idx].value
+            _employment_work_hours = row[_employment_work_hours_idx].value
+            _employement_school_code = row[_employement_school_code_idx].value
+            _employement_is_main_school = row[_employement_is_main_school_idx].value 
+            _employment_source_code = row[_employment_source_code_idx].value
+            
+            if employee_afm is not None and employee_afm != _employee_afm:
+                continue
+            
+            request_dict = {
+                'phase': phase,
+                'employment_start_date': _employment_start_date,
+                'employee_afm': _employee_afm,
+                'employee_last_name': _employee_last_name,
+                'employee_first_name': _employee_first_name,
+                'employement_specialization_id': _employement_specialization,
+                'employment_source_code': _employment_source_code,
+                'employment_hour_type': _employment_hour_type,
+                'employment_work_hours': _employment_work_hours,
+                'employement_school_code': _employement_school_code,
+                'employement_is_main_school':  str_to_bool(_employement_is_main_school)
+            }
+
+            print(_employement_is_main_school)
+
+             
+            employment_label = f"({request_dict.get('employee_am')}) {request_dict.get('employee_last_name')} {request_dict.get('employee_first_name')} {request_dict.get('employee_father_name')} [{request_dict.get('employee_type_name')}]"
+
+
+            if debug:
+                click.echo(f"[I] request object is {json.dumps(request_dict, ensure_ascii=False, sort_keys=True, indent=2)}")
+            
+            
+            try:
+                r = s.post(api_resource, json=request_dict)
+                
+                if r.status_code == 201:
+                    # employee was created
+                    click.echo(f"[I] successfully added employment '{employment_label}' with ID {r.json().get('id')}")
+                    #click.echo(json.dumps(r.json(), sort_keys=True, indent=2))
+                elif r.status_code == 200:
+                    click.echo(f"[I] employment alreay found '{employment_label}' with ID {r.json().get('id')}")
+                elif r.status_code == 404:
+                    click.echo(json.dumps(r.json(), sort_keys=True, ensure_ascii=False, indent=2))
+                    click.echo(f"[W] could not found hiring announcement for placement '{employment_label}'")
+                    continue
+                else:
+                    click.echo(json.dumps(r.json(), sort_keys=True, ensure_ascii=False, indent=2))
+                    click.echo(f"[W] {r.status_code} : could to process {employment_label} in phaistos")
                     raise click.Abort()
                 
                 
