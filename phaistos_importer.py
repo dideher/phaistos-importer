@@ -47,6 +47,9 @@ def string_or_null(value: str) -> str:
         return None 
 
 
+def is_empty_or_null(value: str) -> bool:
+    return value is None or len(value) == 0
+
 
 @click.group()
 @click.option('--debug', default=False, is_flag=True)
@@ -67,9 +70,11 @@ def cli(ctx, debug, phaistos_api):
 @click.option('--employee_afm', default=None, type=str, help='AFM of employee')
 @click.option('--employee_type', default=None, type=click.Choice(['Μόνιμος', 'Αναπληρωτής', 'Αναπληρωτής ΠΔΕ']), help='employee type')
 @click.option('--skip_until_am', default=None, type=int, help='skip until employee AM')
+@click.option('--skip_no_current_unit', default=False, is_flag=True, help='skip employee if no current unit is set')
 @click.option('--continue_after_am', default=None, type=int, help='continue after employee AM')
 @click.pass_context
-def import_employee_report_04_01(ctx, report_04_01_path, employee_am, employee_afm, employee_type, skip_until_am, continue_after_am):
+def import_employee_report_04_01(ctx, report_04_01_path, employee_am, employee_afm, employee_type, skip_until_am, 
+                                 continue_after_am, skip_no_current_unit):
     """Import myschool employee report 01 from REPORT_04_01_PATH
     
     """
@@ -121,7 +126,6 @@ def import_employee_report_04_01(ctx, report_04_01_path, employee_am, employee_a
             _employee_fek_diorismou = row[20]
             _employee_fek_diorismou_date = row[21]
     
-
             # normalization
             _employee_current_unit_id = filter_cvs_column(_employee_current_unit_id)
 
@@ -153,6 +157,14 @@ def import_employee_report_04_01(ctx, report_04_01_path, employee_am, employee_a
 
             employee_label = f"({employee_dict.get('employee_am')}) {employee_dict.get('employee_last_name')} {employee_dict.get('employee_first_name')} {employee_dict.get('employee_father_name')} [{employee_dict.get('employee_type_name')}]"
 
+            if is_empty_or_null(_employee_current_unit_id):
+                if skip_no_current_unit:
+                    click.echo(f"[W] skipping '{employee_label}' since it has no current unit")
+                    continue
+                else:
+                    employee_dict['employee_current_unit_id'] = '319'
+                    employee_dict['employee_current_unit_name'] = 'Δ/ΝΣΗ Β/ΜΙΑΣ ΕΚΠ/ΣΗΣ Ν. ΗΡΑΚΛΕΙΟΥ'
+        
 
             if debug:
                 click.echo(f"[I] request object is {json.dumps(employee_dict, ensure_ascii=False, sort_keys=True, indent=2)}")
