@@ -716,3 +716,85 @@ def import_deputy_placement_report(ctx, report_path, employee_afm, phase, skip_u
 
             except Exception as e:
                 raise click.ClickException(e)
+            
+
+@cli.command()
+@click.argument('report_path', type=click.File('r', encoding='cp1253'))
+@click.option('--employee_afm', default=None, type=str, help='AFM of employee')
+@click.option('--skip_until_afm', default=None, type=int, help='skip until employee AFM')
+@click.option('--continue_after_afm', default=None, type=int, help='continue after employee AFM')
+@click.pass_context
+def import_school_principals(ctx, report_path, employee_afm, skip_until_afm, continue_after_afm):
+    """
+    Import School Principals (report 4.25)
+    
+    """
+
+    # phaistos_importer --debug import-school-principals "stat4_25_2023-11-08-104103.csv"
+
+    started_on = datetime.now().replace(microsecond=0)
+    debug = ctx.obj.get('debug', False)
+    phaistos_api = ctx.obj['phaistos_api']
+    api_resource = phaistos_api + "/api/bulk_import/myschool/schoolprincipals/"
+    
+    csv_reader = csv.reader(report_path, delimiter=';', quotechar='|')
+    row1 = next(csv_reader)  # gets the first line    
+    
+    with requests.Session() as s:
+        for row in csv_reader:
+            
+            
+            #row = sh.row(rx)
+            _employee_first_name = row[18]
+            _employee_last_name = row[17]
+            _employee_father_name = row[19]
+            _specialization_code = row[25]
+
+            _employee_am = row[14]
+            _employee_afm = filter_cvs_column(row[15])
+            _assignment_unit_id = filter_cvs_column(row[7])
+            _assignment_unit_name = row[8]
+            
+            if employee_afm is not None and employee_afm != _employee_afm:
+                continue
+            
+            request_dict = {
+                'employee_afm': _employee_afm,
+                'employee_am': _employee_am,
+                'employee_first_name': _employee_first_name,
+                'employee_last_name': _employee_last_name,
+                'employee_father_name': _employee_father_name,
+                'specialization_code': _specialization_code,
+                'assignment_unit_id': _assignment_unit_id,
+            }
+
+             
+            school_principal_label = f"({request_dict.get('employee_am')}) {request_dict.get('employee_last_name')} {request_dict.get('employee_first_name')} {request_dict.get('employee_father_name')} [{request_dict.get('specialization_code')}]"
+
+
+            if debug:
+                click.echo(f"[I] request object is {json.dumps(request_dict, ensure_ascii=False, sort_keys=True, indent=2)}")
+            
+            try:
+                r = s.post(api_resource, json=request_dict)
+                
+                if r.status_code == 201:
+                    # employee was created
+                    click.echo(f"[I] successfully added school principal '{school_principal_label}' with ID {r.json().get('id')}")
+                    #click.echo(json.dumps(r.json(), sort_keys=True, indent=2))
+                elif r.status_code == 200:
+                    click.echo(f"[I] school principal already found '{school_principal_label}' with ID {r.json().get('id')}")
+                elif r.status_code == 404:
+                    click.echo(json.dumps(r.json(), sort_keys=True, ensure_ascii=False, indent=2))
+                    click.echo(f"[W] could not add school principal '{school_principal_label}'")
+                    raise click.Abort()
+                else:
+                    click.echo(json.dumps(r.json(), sort_keys=True, ensure_ascii=False, indent=2))
+                    click.echo(f"[W] {r.status_code} : could to process {school_principal_label} in phaistos")
+                    raise click.Abort()
+                
+                
+                #return True
+
+            except Exception as e:
+                raise click.ClickException(e)
